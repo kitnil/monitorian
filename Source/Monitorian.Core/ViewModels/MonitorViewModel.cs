@@ -10,6 +10,11 @@ using Monitorian.Core.Models;
 using Monitorian.Core.Models.Monitor;
 using Monitorian.Core.Properties;
 
+using System.Net;
+using System.Security.Policy;
+using System.IO;
+using Monitorian.Core.Models.Watcher;
+
 namespace Monitorian.Core.ViewModels
 {
 	public class MonitorViewModel : ViewModelBase
@@ -18,14 +23,66 @@ namespace Monitorian.Core.ViewModels
 		public SettingsCore Settings => _controller.Settings;
 
 		private IMonitor _monitor;
+		async Task Main()
+		{
+			// Create a new HttpListener instance and start listening for requests
+			var listener = new HttpListener();
+			
+			listener.Prefixes.Add("http://+:8080/");
+			listener.Start();
+
+			Console.WriteLine("Listening...");
+
+			while (true)
+			{
+				// Wait for an incoming request asynchronously
+				var context = await listener.GetContextAsync();
+
+				// Handle the request on a separate thread
+				_ = HandleRequestAsync(context);
+			}
+		}
+		async Task HandleRequestAsync(HttpListenerContext context)
+		{
+			try
+			{
+				// Get the request object from the context
+				var request = context.Request;
+
+				if (context.Request.HttpMethod == "POST" && context.Request.ContentType == "application/json")
+				{
+					using (var bodyReader = new StreamReader(request.InputStream))
+					{
+						var bodyString = bodyReader.ReadToEnd();
+						Console.WriteLine("Received string: {0}", bodyString);
+						int brightness = int.Parse(bodyString);
+						SetBrightness(brightness);
+					}
+				}
+
+				// Send a response back to the client
+				var response = context.Response;
+				response.StatusCode = 200;
+				response.ContentType = "text/plain";
+				var responseBytes = System.Text.Encoding.UTF8.GetBytes("Hello World!");
+				await response.OutputStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+				response.Close();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error handling request: {ex.Message}");
+			}
+		}
 
 		public MonitorViewModel(AppControllerCore controller, IMonitor monitor)
 		{
+			Main();
 			this._controller = controller ?? throw new ArgumentNullException(nameof(controller));
 			this._monitor = monitor ?? throw new ArgumentNullException(nameof(monitor));
 			SetTopLeft();
 
 			LoadCustomization();
+
 		}
 
 		private readonly object _lock = new();
